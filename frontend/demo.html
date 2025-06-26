@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Agent API Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .message {
+            max-width: 70%;
+            margin: 8px 0;
+            padding: 12px 16px;
+            border-radius: 12px;
+            word-wrap: break-word;
+        }
+        
+        .user-message {
+            background-color: #3b82f6;
+            color: white;
+            margin-left: auto;
+        }
+        
+        .bot-message {
+            background-color: #f3f4f6;
+            color: #1f2937;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">BikeHero AI Agent API Demo</h1>
+            <p class="text-gray-600">Demonstrate the AI agent APIs for bike maintenance services (Demo Mode)</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Chat Interface Section -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-semibold text-gray-900 mb-4">Chat Interface</h2>
+
+                <div id="chatMessages" class="h-64 overflow-y-auto border border-gray-200 rounded-md p-4 mb-4 bg-gray-50">
+                    <p class="text-gray-500 text-center">Start a conversation with the AI agent</p>
+                    <p class="text-gray-400 text-center text-sm mt-2">Try asking: "What are your maintenance packages?"</p>
+                </div>
+
+                <form id="chatForm" class="flex space-x-2">
+                    <input type="text" id="messageInput" placeholder="Type your message..." class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <button type="submit" class="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        Send
+                    </button>
+                </form>
+            </div>
+
+            <!-- API Testing Section -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-semibold text-gray-900 mb-4">API Testing</h2>
+
+                <div class="space-y-4">
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-900 mb-2">Pricing Context Update</h3>
+                        <textarea id="pricingContext" rows="6" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter pricing information...">Maintenance Packages
+Tier	One‑time	Annual (2 services)	Includes
+Essential	SGD59	SGD 94	Tune brakes, gearing, tires, headset, saddle
+Advanced	SGD 89	SGD 142	All Essential + cassette/chain/derailleurs/chainring cleaning (excl. BB & hubs)
+Premium	SGD 129	SGD 206	All Advanced + full wash (frame, wheels, bars, saddle, brakes) (excl. BB & hubs)
+
+One‑time services: ~2‑day turnaround 
+Annual package saves approx. 20% versus two one‑times.</textarea>
+                        <button onclick="updatePricingContext()" class="mt-2 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500">
+                            Update Pricing Context
+                        </button>
+                    </div>
+
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-900 mb-2">Chat History</h3>
+                        <button onclick="getChatHistory()" class="bg-purple-600 text-white py-2 px-4 rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500">
+                            Get Chat History
+                        </button>
+                        <div id="chatHistory" class="mt-2 text-sm text-gray-600"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Messages -->
+        <div id="statusMessages" class="mt-4"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        // Chat Interface
+        document.getElementById('chatForm').addEventListener('submit', async(e) => {
+            e.preventDefault();
+            const message = document.getElementById('messageInput').value;
+            if (!message.trim()) return;
+
+            // Add user message
+            addMessage(message, 'user');
+            document.getElementById('messageInput').value = '';
+
+            // Show loading
+            const loadingId = addLoadingMessage();
+
+            try {
+                const response = await fetch(`${API_BASE}/chat/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message,
+                        agent_id: 1,
+                    }),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    removeLoadingMessage(loadingId);
+                    addMessage(data.response, 'bot', data.metadata);
+                } else {
+                    removeLoadingMessage(loadingId);
+                    addMessage('Sorry, I encountered an error. Please try again.', 'bot');
+                }
+            } catch (error) {
+                removeLoadingMessage(loadingId);
+                addMessage('Sorry, I encountered an error. Please try again.', 'bot');
+                showStatus('Error sending message: ' + error.message, 'error');
+            }
+        });
+
+        // Pricing Context Update
+        async function updatePricingContext() {
+            const pricingData = document.getElementById('pricingContext').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/agent/pricing/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        pricing_data: pricingData
+                    }),
+                });
+
+                if (response.ok) {
+                    showStatus('Pricing context updated successfully!', 'success');
+                } else {
+                    showStatus('Failed to update pricing context', 'error');
+                }
+            } catch (error) {
+                showStatus('Error updating pricing context: ' + error.message, 'error');
+            }
+        }
+
+        // Chat History
+        async function getChatHistory() {
+            try {
+                const response = await fetch(`${API_BASE}/chat/history/`);
+
+                if (response.ok) {
+                    const history = await response.json();
+                    displayChatHistory(history);
+                } else {
+                    showStatus('Failed to get chat history', 'error');
+                }
+            } catch (error) {
+                showStatus('Error getting chat history: ' + error.message, 'error');
+            }
+        }
+
+        // Helper Functions
+        function addMessage(text, sender, metadata = null) {
+            const messagesDiv = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}-message`;
+
+            let content = `<div>${text}</div>`;
+            if (metadata && metadata.requires_human) {
+                content += '<div class="mt-2 p-2 bg-yellow-100 border border-yellow-300 rounded text-xs text-yellow-800">⚠️ Transfer to human agent required</div>';
+            }
+            content += `<div class="text-xs mt-1 opacity-75">${new Date().toLocaleTimeString()}</div>`;
+
+            messageDiv.innerHTML = content;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function addLoadingMessage() {
+            const messagesDiv = document.getElementById('chatMessages');
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'message bot-message';
+            loadingDiv.id = 'loading-' + Date.now();
+            loadingDiv.innerHTML = '<div class="loading"></div>';
+            messagesDiv.appendChild(loadingDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            return loadingDiv.id;
+        }
+
+        function removeLoadingMessage(loadingId) {
+            const loadingDiv = document.getElementById(loadingId);
+            if (loadingDiv) {
+                loadingDiv.remove();
+            }
+        }
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('statusMessages');
+            const statusElement = document.createElement('div');
+            statusElement.className = `p-3 rounded-md mb-2 ${
+                type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+            }`;
+            statusElement.textContent = message;
+            statusDiv.appendChild(statusElement);
+
+            setTimeout(() => {
+                statusElement.remove();
+            }, 5000);
+        }
+
+        function displayChatHistory(history) {
+            const historyDiv = document.getElementById('chatHistory');
+            if (history.length === 0) {
+                historyDiv.innerHTML = '<p>No chat history found</p>';
+                return;
+            }
+
+            let html = '<div class="space-y-2">';
+            history.forEach(chat => {
+                html += `
+                    <div class="border rounded p-2">
+                        <div class="text-xs text-gray-500">${new Date(chat.created_at).toLocaleString()}</div>
+                        <div class="font-medium">User: ${chat.message}</div>
+                        <div class="text-gray-700">AI: ${chat.response}</div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            historyDiv.innerHTML = html;
+        }
+    </script>
+</body>
+
+</html>

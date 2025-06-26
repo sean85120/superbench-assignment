@@ -1,0 +1,13 @@
+.env
+.DS_Store
+
+poetry.lock
+package-lock.json
+node_modules/
+
+ai_agent.db
+chroma_db/
+
+__pycache__/
+
+assignment_description.txt
