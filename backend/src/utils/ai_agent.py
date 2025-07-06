@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from loguru import logger
 from openai import OpenAI
 
 from backend.src.utils.vector_db import VectorDBManager
@@ -27,31 +28,18 @@ class ResponseTemplates:
 
 IMPORTANT RULES:
 1. ONLY answer questions about BikeHero's bicycle maintenance services and pricing
-2. If the user asks about anything else (cars, other companies, general topics), respond with "Transfer to human agent"
+2. If the user asks about anything else (cars, other companies, general topics), ask them to ask a question about BikeHero's bicycle maintenance services and pricing or transfer to human agent
 3. If you don't have specific pricing information for their question, respond with "Transfer to human agent"
 4. If the question is too complex or requires personal consultation, respond with "Transfer to human agent"
-5. If the user wants to book services, respond with "Transfer to human agent"
 
-When you need to transfer to human agent, always provide these options:
-1. Provide your name, phone number, and email for follow-up
+When you need to transfer to human agent or they want to book services, always provide these options:
+1. Provide your name, phone number, and email (and plan if they want to book services) for follow-up
 2. Book directly through our website at https://bikehero.sg/goifnmnf
 
 PLEASE NOTE: If the user provides their contact information, display the contact information to them and respond with "Thank you for providing your contact information. Please wait for our team to contact you."
 
 Be polite and professional. Add line breaks for better readability.
 """
-
-    @property
-    def relevance_classifier_prompt(self) -> str:
-        """Prompt for classifying message relevance"""
-        return "You are a classifier. Determine if the user's message is related to BikeHero services, bike services in general, OR if they are providing contact information for booking services. Consider the chat history context when making your decision. If the user is providing their name, phone number, email, or other contact details for booking, classify as relevant. Respond with only 'YES' or 'NO'."
-
-    def get_off_topic_response(self) -> Dict[str, Any]:
-        """Response for off-topic messages"""
-        return {
-            "response": "I'm here to help with BikeHero's bicycle maintenance services. Could you please ask me about our bike maintenance packages, pricing, or other BikeHero-related services?",
-            "metadata_info": {"requires_human": False, "topic": "off_topic"},
-        }
 
     def get_human_agent_transfer_response(self) -> Dict[str, Any]:
         """Response when transferring to human agent"""
@@ -125,30 +113,12 @@ class AIAgent:
                     content = entry.get("content", "")
                     chat_context += f"{role.title()}: {content}\n"
 
-            # First, check if the question is related to BikeHero or bike services with chat history context
-            relevance_check_prompt = ChatPromptTemplate.from_messages(
-                [
-                    SystemMessage(
-                        content=self.response_templates.relevance_classifier_prompt
-                    ),
-                    HumanMessage(
-                        content=f"{chat_context}\n\nCurrent Message: {message}"
-                    ),
-                ]
-            )
-
-            relevance_response = await self.chat_model.ainvoke(
-                relevance_check_prompt.format_messages()
-            )
-            is_relevant = "yes" in relevance_response.content.lower()
-
-            if not is_relevant:
-                return self.response_templates.get_off_topic_response()
-
-            # For relevant questions, retrieve context and generate response
+            # Retrieve context and generate response
             try:
                 relevant_context = self.vector_db.search_relevant_context(message)
                 context_text = "\n\n".join(relevant_context)
+
+                logger.info(f"RAG results: {context_text}")
 
                 # Create the chat prompt with retrieved context and chat history
                 prompt = ChatPromptTemplate.from_messages(
